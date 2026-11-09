@@ -17,7 +17,7 @@ jobs:
         with:
           arguments: assembleDebug
           gradle-version: '7.6.3'
-          build-root-directory: '.'
+          cache-disabled: 'true'
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
