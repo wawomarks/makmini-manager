@@ -1,43 +1,132 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     android:orientation="vertical"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:padding="12dp">
+    android:padding="24dp"
+    android:background="@android:color/white">
 
-    <EditText
-        android:id="@+id/cmd"
+    <!-- App Title -->
+    <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="root command" />
+        android:text="MagMin Su Manager"
+        android:textSize="20sp"
+        android:textColor="@android:color/holo_blue_dark"
+        android:textStyle="bold"
+        android:layout_marginBottom="16dp"/>
 
+    <!-- Status Indicator -->
     <LinearLayout
-        android:orientation="horizontal"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content">
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="12dp"
+        android:background="@android:drawable/card_background"
+        android:layout_marginBottom="20dp">
+
+        <TextView
+            android:id="@+id/statusText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Status: Unknown"
+            android:textSize="14sp"
+            android:layout_gravity="center_vertical"/>
+    </LinearLayout>
+
+    <!-- Command Input Section -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Root Command:"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="8dp"/>
+
+        <EditText
+            android:id="@+id/cmd"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Enter root command..."
+            android:inputType="textMultiLine"
+            android:minLines="2"
+            android:maxLines="4"
+            android:background="@android:drawable/editbox_background"
+            android:padding="12dp"
+            android:layout_marginBottom="16dp"/>
+    </LinearLayout>
+
+    <!-- Action Buttons -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginBottom="20dp">
+
         <Button
             android:id="@+id/run"
             android:layout_width="0dp"
-            android:layout_weight="1"
             android:layout_height="wrap_content"
-            android:text="Run" />
+            android:layout_weight="1"
+            android:text="Execute"
+            android:layout_marginEnd="8dp"
+            android:backgroundTint="@android:color/holo_green_dark"
+            android:textColor="@android:color/white"/>
+
         <Button
             android:id="@+id/status"
             android:layout_width="0dp"
-            android:layout_weight="1"
             android:layout_height="wrap_content"
-            android:text="Status" />
+            android:layout_weight="1"
+            android:text="Status"
+            android:layout_marginEnd="8dp"
+            android:backgroundTint="@android:color/holo_blue_dark"
+            android:textColor="@android:color/white"/>
+
+        <Button
+            android:id="@+id/manage"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Manage"
+            android:backgroundTint="@android:color/holo_orange_dark"
+            android:textColor="@android:color/white"/>
     </LinearLayout>
 
-    <ScrollView
+    <!-- Log Section -->
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1">
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
         <TextView
-            android:id="@+id/log"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textIsSelectable="true"
-            android:fontFamily="monospace" />
-    </ScrollView>
+            android:text="Command Log:"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="8dp"/>
+
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:background="@android:drawable/editbox_background">
+
+            <TextView
+                android:id="@+id/log"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textIsSelectable="true"
+                android:fontFamily="monospace"
+                android:padding="16dp"
+                android:textSize="14sp"/>
+        </ScrollView>
+    </LinearLayout>
 </LinearLayout>
