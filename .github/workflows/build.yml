@@ -13,16 +13,15 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
-      - name: Ensure Android SDK
-        run: |
-          export ANDROID_HOME=/usr/local/lib/android/sdk
-          sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools"
-      - name: Build (Debug)
-        run: gradle assembleDebug
+      - uses: gradle/gradle-build-action@v3
+        with:
+          arguments: assembleDebug
+          gradle-version: '7.6.3'
+          build-root-directory: '.'
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: makmini-manager
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: warn
           retention-days: 30
