@@ -38,6 +38,9 @@ public final class RootClient {
 
     public static final String SOCK = "/dev/minisud.sock";
 
+    /** Daemon payload deployed by the kit. */
+    public static final String DAEMON = "/data/local/tmp/.gl/bin/minisud";
+
     /** GhostLock root helper command/response files (mode 0666). */
     public static final String CHAN_CMD = "/data/local/tmp/rcmd";
     public static final String CHAN_OUT = "/data/local/tmp/rout";
@@ -169,14 +172,23 @@ public final class RootClient {
         }
     }
 
-    /** Shell snippet that starts minisud through the DEFEX launcher. */
+    /**
+     * Shell snippet that starts minisud from a root context.
+     *
+     * <p>It must not call {@code defex.sh}: that script re-enters root through
+     * the {@code mpnl} channel, so running it from a channel command deadlocks
+     * the single command slot forever. A root caller can do the safeplace bind
+     * itself, then exec the daemon.
+     */
     public static String startDaemonCommand() {
         return "[ -S " + SOCK + " ] && { echo 'minisud already running'; exit 0; }; "
-                + "nohup sh /data/local/tmp/defex/defex.sh -g -d "
-                + "/data/local/tmp/.gl/bin/minisud >/dev/null 2>&1 & "
+                + "B=" + DAEMON + "; S=/system/bin/fsdbg; "
+                + "[ -x \"$B\" ] || { echo \"missing $B\"; exit 127; }; "
+                + "mount --bind \"$B\" \"$S\" || { echo 'bind failed'; exit 4; }; "
+                + "nohup \"$S\" </dev/null >/dev/null 2>&1 & "
                 + "i=0; while [ $i -lt 40 ]; do [ -S " + SOCK + " ] && break; "
                 + "sleep 0.25; i=$((i+1)); done; "
-                + "cat /dev/minisud.pid 2>/dev/null; "
+                + "echo \"pid=$(cat /dev/minisud.pid 2>/dev/null)\"; "
                 + "[ -S " + SOCK + " ] && echo 'minisud is up' || echo 'minisud did not start'";
     }
 

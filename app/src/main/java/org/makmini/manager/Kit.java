@@ -6,6 +6,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 
 /**
  * Deploys the bundled root kit (GhostLock scripts, minisud, su client, glm)
@@ -86,7 +87,21 @@ public final class Kit {
         }
         sh.append("echo \"kit deployed: $(ls -1 $D/bin | wc -l) files in $D/bin\"\n");
 
-        return RootClient.run(sh.toString(), 120000).toString();
+        // Long commands wedge the GhostLock channel (single command slot, small
+        // buffer), so stage the script in app storage and hand root a short
+        // one-liner. Root has no fscrypt key: warm the script and every asset.
+        File script = new File(ctx.getFilesDir(), "deploy_kit.sh");
+        try {
+            try (FileOutputStream out = new FileOutputStream(script)) {
+                out.write(sh.toString().getBytes(StandardCharsets.UTF_8));
+            }
+        } catch (IOException e) {
+            return "deploy: cannot write " + script + ": " + e.getMessage();
+        }
+
+        RootClient.warm(src.getAbsolutePath());
+        RootClient.warm(script.getAbsolutePath());
+        return RootClient.run("sh '" + script.getAbsolutePath() + "'", 120000).toString();
     }
 
     /** Renders the asset manifest, used by the UI help text. */
