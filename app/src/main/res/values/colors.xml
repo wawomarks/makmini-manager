@@ -1,0 +1,10 @@
+<resources>
+    <color name="primary">#0D47A1</color>
+    <color name="primary_dark">#002171</color>
+    <color name="accent">#00897B</color>
+    <color name="section">#00695C</color>
+    <color name="ok">#2E7D32</color>
+    <color name="warn">#C62828</color>
+    <color name="console_bg">#101418</color>
+    <color name="console_fg">#B9F6CA</color>
+</resources>

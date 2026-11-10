@@ -1,132 +1,199 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools"
-    android:orientation="vertical"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:padding="24dp"
-    android:background="@android:color/white">
+    android:fillViewport="true">
 
-    <!-- App Title -->
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="MagMin Su Manager"
-        android:textSize="20sp"
-        android:textColor="@android:color/holo_blue_dark"
-        android:textStyle="bold"
-        android:layout_marginBottom="16dp"/>
-
-    <!-- Status Indicator -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:padding="12dp"
-        android:background="@android:drawable/card_background"
-        android:layout_marginBottom="20dp">
-
-        <TextView
-            android:id="@+id/statusText"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Status: Unknown"
-            android:textSize="14sp"
-            android:layout_gravity="center_vertical"/>
-    </LinearLayout>
-
-    <!-- Command Input Section -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical">
+        android:orientation="vertical"
+        android:padding="12dp">
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Root Command:"
-            android:textSize="16sp"
+            android:text="@string/status_header"
+            android:textSize="12sp"
             android:textStyle="bold"
-            android:layout_marginBottom="8dp"/>
+            android:letterSpacing="0.08"
+            android:textColor="@color/section" />
+
+        <TextView
+            android:id="@+id/status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fontFamily="monospace"
+            android:textSize="12sp"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp"
+            android:text="checking…" />
+
+        <LinearLayout style="@style/Row">
+            <Button
+                android:id="@+id/btnRefresh"
+                style="@style/RowButton"
+                android:text="Refresh" />
+            <Button
+                android:id="@+id/btnArm"
+                style="@style/RowButton"
+                android:text="Arm root help" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/Row">
+            <Button
+                android:id="@+id/btnDeploy"
+                style="@style/RowButton"
+                android:text="Deploy kit" />
+            <Button
+                android:id="@+id/btnInstallSu"
+                style="@style/RowButton"
+                android:text="Install su" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/Row">
+            <Button
+                android:id="@+id/btnStartDaemon"
+                style="@style/RowButton"
+                android:text="Start daemon" />
+            <Button
+                android:id="@+id/btnStopDaemon"
+                style="@style/RowButton"
+                android:text="Stop daemon" />
+        </LinearLayout>
+
+        <TextView style="@style/SectionTitle" android:text="RUN AS ROOT" />
 
         <EditText
             android:id="@+id/cmd"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:hint="Enter root command..."
-            android:inputType="textMultiLine"
-            android:minLines="2"
-            android:maxLines="4"
-            android:background="@android:drawable/editbox_background"
-            android:padding="12dp"
-            android:layout_marginBottom="16dp"/>
-    </LinearLayout>
+            android:hint="@string/cmd_hint"
+            android:inputType="text"
+            android:maxLines="3"
+            android:fontFamily="monospace"
+            android:textSize="13sp" />
 
-    <!-- Action Buttons -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:layout_marginBottom="20dp">
+        <LinearLayout style="@style/Row">
+            <Button
+                android:id="@+id/btnRun"
+                style="@style/RowButton"
+                android:text="Run" />
+            <Button
+                android:id="@+id/btnWhoami"
+                style="@style/RowButton"
+                android:text="id" />
+            <Button
+                android:id="@+id/btnClear"
+                style="@style/RowButton"
+                android:text="Clear log" />
+        </LinearLayout>
 
-        <Button
-            android:id="@+id/run"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="Execute"
-            android:layout_marginEnd="8dp"
-            android:backgroundTint="@android:color/holo_green_dark"
-            android:textColor="@android:color/white"/>
+        <TextView style="@style/SectionTitle" android:text="SU POLICY (minisud)" />
 
-        <Button
-            android:id="@+id/status"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="Status"
-            android:layout_marginEnd="8dp"
-            android:backgroundTint="@android:color/holo_blue_dark"
-            android:textColor="@android:color/white"/>
+        <LinearLayout style="@style/Row">
+            <Button
+                android:id="@+id/btnMode"
+                style="@style/RowButton"
+                android:text="Mode: ?" />
+            <Button
+                android:id="@+id/btnAllowSelf"
+                style="@style/RowButton"
+                android:text="Allow this app" />
+        </LinearLayout>
 
-        <Button
-            android:id="@+id/manage"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="Manage"
-            android:backgroundTint="@android:color/holo_orange_dark"
-            android:textColor="@android:color/white"/>
-    </LinearLayout>
-
-    <!-- Log Section -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical">
-
-        <TextView
+        <EditText
+            android:id="@+id/policyEntry"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Command Log:"
-            android:textSize="16sp"
-            android:textStyle="bold"
-            android:layout_marginBottom="8dp"/>
+            android:hint="@string/policy_hint"
+            android:inputType="text"
+            android:fontFamily="monospace"
+            android:textSize="13sp" />
+
+        <LinearLayout style="@style/Row">
+            <Button
+                android:id="@+id/btnAllow"
+                style="@style/RowButton"
+                android:text="Allow" />
+            <Button
+                android:id="@+id/btnDeny"
+                style="@style/RowButton"
+                android:text="Deny" />
+            <Button
+                android:id="@+id/btnPolicyList"
+                style="@style/RowButton"
+                android:text="Show" />
+        </LinearLayout>
+
+        <TextView style="@style/SectionTitle" android:text="RW LAYER (glm)" />
+
+        <EditText
+            android:id="@+id/rwPath"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/rw_hint"
+            android:inputType="text"
+            android:fontFamily="monospace"
+            android:textSize="13sp" />
+
+        <LinearLayout style="@style/Row">
+            <Button
+                android:id="@+id/btnRwAdd"
+                style="@style/RowButton"
+                android:text="Add" />
+            <Button
+                android:id="@+id/btnRwList"
+                style="@style/RowButton"
+                android:text="List" />
+            <Button
+                android:id="@+id/btnRwSave"
+                style="@style/RowButton"
+                android:text="Save" />
+        </LinearLayout>
+
+        <TextView style="@style/SectionTitle" android:text="BOOT / START LOG" />
+
+        <LinearLayout style="@style/Row">
+            <Button
+                android:id="@+id/btnBootDir"
+                style="@style/RowButton"
+                android:text="Boot dir" />
+            <Button
+                android:id="@+id/btnBootRun"
+                style="@style/RowButton"
+                android:text="Run boot" />
+            <Button
+                android:id="@+id/btnBootLog"
+                style="@style/RowButton"
+                android:text="Start log" />
+        </LinearLayout>
+
+        <TextView style="@style/SectionTitle" android:text="SHIZUKU" />
+
+        <LinearLayout style="@style/Row">
+            <Button
+                android:id="@+id/btnShizuku"
+                style="@style/RowButton"
+                android:text="Shizuku status" />
+            <Button
+                android:id="@+id/btnShizukuApp"
+                style="@style/RowButton"
+                android:text="Open Shizuku" />
+        </LinearLayout>
+
+        <TextView style="@style/SectionTitle" android:text="OUTPUT" />
 
         <ScrollView
+            android:id="@+id/logScroll"
             android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
-            android:background="@android:drawable/editbox_background">
+            android:layout_height="wrap_content">
 
             <TextView
                 android:id="@+id/log"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:textIsSelectable="true"
-                android:fontFamily="monospace"
-                android:padding="16dp"
-                android:textSize="14sp"/>
+                style="@style/Console"
+                android:text="" />
         </ScrollView>
+
     </LinearLayout>
-</LinearLayout>
+</ScrollView>

@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">makmini manager</string>
+    <string name="status_header">ROOT / DAEMON STATUS</string>
+    <string name="cmd_hint">command to run as root (e.g. id)</string>
+    <string name="policy_hint">package name or uid</string>
+    <string name="rw_hint">absolute path for the RW layer</string>
+</resources>

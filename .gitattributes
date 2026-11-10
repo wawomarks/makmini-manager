@@ -1,0 +1,14 @@
+* text=auto
+
+# Shell payloads must keep LF endings: they run on Android (/system/bin/sh).
+*.sh text eol=lf
+app/src/main/assets/bin/glm text eol=lf
+
+# Native binaries are opaque.
+app/src/main/assets/bin/minisud binary
+app/src/main/assets/bin/su_client binary
+app/src/main/assets/bin/libsu.so binary
+app/src/main/assets/bin/busybox binary
+app/src/main/assets/bin/defex binary
+app/src/main/assets/bin/dfinit binary
+app/src/main/assets/bin/sud_policy binary
