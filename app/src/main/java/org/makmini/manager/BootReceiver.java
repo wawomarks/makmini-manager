@@ -7,9 +7,10 @@ import android.content.Intent;
 /**
  * Termux-Boot style start hook.
  *
- * <p>After boot (or an app update) it tries the daemon, then falls back to a su
- * binary, starts minisud when needed, and runs the user's boot scripts through
- * {@code .gl/bin/makmini_boot.sh}. Everything is recorded in the start log.
+ * <p>After boot (or an app update) it tries the daemon, then the GhostLock
+ * channel, then a su binary. When root is available it starts minisud through
+ * the DEFEX launcher, runs the user's boot scripts and re-applies saved RW
+ * layers. Everything is recorded in the start log.
  */
 public class BootReceiver extends BroadcastReceiver {
 
@@ -26,22 +27,26 @@ public class BootReceiver extends BroadcastReceiver {
                 BootLog.append(context, "boot broadcast: " + action);
 
                 if (!RootClient.daemonAlive()) {
-                    BootLog.append(context, "minisud not running, trying to start it");
+                    BootLog.append(context, "minisud not running, trying the defex launcher");
+                    RootClient.warmKit();
                     RootClient.Result started = RootClient.run(
-                            "nohup " + GL + "/bin/minisud >/dev/null 2>&1 &", 15000);
-                    if (!started.ok()) {
-                        BootLog.append(context, "start failed: " + started.out.trim());
-                    }
+                            RootClient.startDaemonCommand(), 40000);
+                    BootLog.append(context, "daemon: " + oneline(started));
                 }
 
+                RootClient.warm(GL + "/bin/makmini_boot.sh");
                 RootClient.Result r = RootClient.run(
                         "sh " + GL + "/bin/makmini_boot.sh", 180000);
                 BootLog.append(context, "boot scripts: " + r.out.trim());
 
                 if (!r.ok()) {
-                    BootLog.append(context, "boot scripts rc=" + r.rc
+                    BootLog.append(context, "boot scripts rc=" + r.rc + " via " + r.via
                             + (RootClient.suBinary() == null
                             ? " (no su binary: root is not armed yet)" : ""));
+                }
+
+                if (RwLayer.hasLayers(context)) {
+                    BootLog.append(context, "rw layers: " + oneline(RwLayer.applyAll(context)));
                 }
             } catch (Throwable t) {
                 BootLog.append(context, "boot handler error: " + t);
@@ -49,5 +54,14 @@ public class BootReceiver extends BroadcastReceiver {
                 pending.finish();
             }
         }, "makmini-boot").start();
+    }
+
+    private static String oneline(RootClient.Result r) {
+        String out = r.out.trim().replace('\n', ' ');
+        return (out.isEmpty() ? "" : out + " ") + "[rc=" + r.rc + " via " + r.via + "]";
+    }
+
+    private static String oneline(String text) {
+        return text == null ? "" : text.trim().replace('\n', ' ');
     }
 }

@@ -4,6 +4,7 @@
 
 LOG=/dev/makmini_boot.log
 D=/data/local/tmp/.gl
+X=/data/local/tmp/defex
 B1=/sdcard/Android/data/org.makmini.manager/files/boot
 B2=/sdcard/makmini/boot
 
@@ -12,11 +13,21 @@ log() { printf '%s %s\n' "$(date +%H:%M:%S 2>/dev/null)" "$*" >> "$LOG"; }
 : > "$LOG"
 log "makmini_boot start (uid=$(id -u 2>/dev/null))"
 
-# Keep the su socket available across boots.
+# Keep the su socket available across boots. DEFEX kills a direct exec of the
+# unsigned daemon, so launch it through the bind-mount helper. Root has no
+# fscrypt key, so warm the payload first (the app warms it as well).
 if [ ! -S /dev/minisud.sock ]; then
-    log "minisud socket missing, starting daemon"
-    nohup "$D/bin/minisud" >/dev/null 2>&1 &
-    sleep 1
+    for f in "$X/defex" "$X/defex.sh" "$D/bin/minisud"; do
+        [ -f "$f" ] && dd if="$f" of=/dev/null bs=65536 2>/dev/null
+    done
+    log "minisud socket missing, starting via defex"
+    nohup /system/bin/sh "$X/defex.sh" -g -d "$D/bin/minisud" >/dev/null 2>&1 &
+    i=0
+    while [ "$i" -lt 40 ]; do
+        [ -S /dev/minisud.sock ] && break
+        sleep 0.25
+        i=$((i+1))
+    done
 fi
 [ -S /dev/minisud.sock ] && log "minisud socket: up" || log "minisud socket: MISSING"
 

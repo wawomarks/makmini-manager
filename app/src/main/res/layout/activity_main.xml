@@ -126,7 +126,7 @@
                 android:text="Show" />
         </LinearLayout>
 
-        <TextView style="@style/SectionTitle" android:text="RW LAYER (glm)" />
+        <TextView style="@style/SectionTitle" android:text="RW LAYER (tmpfs)" />
 
         <EditText
             android:id="@+id/rwPath"
@@ -146,10 +146,17 @@
                 android:id="@+id/btnRwList"
                 style="@style/RowButton"
                 android:text="List" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/Row">
             <Button
                 android:id="@+id/btnRwSave"
                 style="@style/RowButton"
                 android:text="Save" />
+            <Button
+                android:id="@+id/btnRwRemove"
+                style="@style/RowButton"
+                android:text="Remove" />
         </LinearLayout>
 
         <TextView style="@style/SectionTitle" android:text="BOOT / START LOG" />

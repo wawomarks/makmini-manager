@@ -32,7 +32,6 @@ import java.util.Locale;
 public class MainActivity extends Activity {
 
     private static final String GL = "/data/local/tmp/.gl";
-    private static final String GLM = "sh " + GL + "/manager/glm";
     private static final String POLICY = "/dev/minisud.policy";
     private static final String ARM_CMD = "sh /data/local/tmp/glroot.sh true";
 
@@ -57,6 +56,7 @@ public class MainActivity extends Activity {
     private EditText rwView;
     private Button modeButton;
     private boolean refreshing;
+    private boolean autoApplied;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -78,8 +78,7 @@ public class MainActivity extends Activity {
         findViewById(R.id.btnDeploy).setOnClickListener(v -> deployKit());
         findViewById(R.id.btnInstallSu).setOnClickListener(v -> installSu());
         findViewById(R.id.btnStartDaemon).setOnClickListener(v -> startDaemon());
-        findViewById(R.id.btnStopDaemon).setOnClickListener(v ->
-                runCmd("stop minisud", GL + "/bin/minisud --stop", 20000));
+        findViewById(R.id.btnStopDaemon).setOnClickListener(v -> stopDaemon());
 
         findViewById(R.id.btnRun).setOnClickListener(v -> runInputCommand());
         findViewById(R.id.btnWhoami).setOnClickListener(v -> runCmd("id", "id", 20000));
@@ -94,10 +93,13 @@ public class MainActivity extends Activity {
         findViewById(R.id.btnRwAdd).setOnClickListener(v -> rwAction("add"));
         findViewById(R.id.btnRwList).setOnClickListener(v -> rwAction("list"));
         findViewById(R.id.btnRwSave).setOnClickListener(v -> rwAction("save"));
+        findViewById(R.id.btnRwRemove).setOnClickListener(v -> rwAction("remove"));
 
         findViewById(R.id.btnBootDir).setOnClickListener(v -> prepareBootDir());
-        findViewById(R.id.btnBootRun).setOnClickListener(v ->
-                runCmd("run boot scripts", "sh " + GL + "/bin/makmini_boot.sh", 180000));
+        findViewById(R.id.btnBootRun).setOnClickListener(v -> {
+            RootClient.warmKit();
+            runCmd("run boot scripts", "sh " + GL + "/bin/makmini_boot.sh", 180000);
+        });
         findViewById(R.id.btnBootLog).setOnClickListener(v -> showStartLog());
 
         findViewById(R.id.btnShizuku).setOnClickListener(v -> shizukuStatus());
@@ -125,16 +127,33 @@ public class MainActivity extends Activity {
         statusView.setText("checking root transport…");
 
         new Thread(() -> {
+            RootClient.resetChannel();
             boolean alive = RootClient.daemonAlive();
             String su = RootClient.suBinary();
             RootClient.Result r = RootClient.run(STATUS_CMD, 25000);
             String text = buildStatus(alive, su, r);
+            boolean rootOk = r.ok();
             ui.post(() -> {
                 statusView.setText(text);
                 updateModeButton(r.out);
                 refreshing = false;
             });
+            if (rootOk) {
+                maybeAutoApplyLayers();
+            }
         }, "status").start();
+    }
+
+    /** Restores saved RW layers once per process, after root is available. */
+    private void maybeAutoApplyLayers() {
+        if (autoApplied || !RwLayer.hasLayers(this)) {
+            return;
+        }
+        autoApplied = true;
+        new Thread(() -> {
+            String out = RwLayer.applyAll(this);
+            ui.post(() -> appendLog("rw auto-apply:\n" + out));
+        }, "rw-apply").start();
     }
 
     private String buildStatus(boolean daemonAlive, String su, RootClient.Result r) {
@@ -170,6 +189,8 @@ public class MainActivity extends Activity {
                 .append('\n');
 
         sb.append("su shim   : ").append(su == null ? "missing" : su).append('\n');
+        sb.append("transport : ").append(r.via).append(" (rc ").append(r.rc).append(")\n");
+        sb.append("rw layers : ").append(RwLayer.paths(this).size()).append(" saved\n");
 
         if (r.rc == 127 || (su == null && !daemonAlive)) {
             sb.append("\nNo root transport yet. Arm root, then deploy the kit:\n")
@@ -220,15 +241,30 @@ public class MainActivity extends Activity {
     }
 
     private void installSu() {
-        runCmd("install su shim", "D=" + GL + "; "
-                + "mkdir -p /odm/bin; "
-                + "cp -f $D/bin/su_client /odm/bin/su; "
-                + "chmod 755 /odm/bin/su; "
-                + "[ -f " + POLICY + " ] || printf 'mode permissive\\n' > " + POLICY + "; "
-                + "if [ -e /system/bin/su ]; then mount --bind /odm/bin/su /system/bin/su 2>/dev/null "
-                + "&& echo 'bound over /system/bin/su'; fi; "
-                + "ls -l /odm/bin/su /system/bin/su 2>&1; "
-                + GLM + " mode permissive 2>&1 | tail -n 3", 90000);
+        appendLog("$ install su shim");
+        new Thread(() -> {
+            // Root cannot read a cold /data inode (fscrypt ENOKEY): warm first.
+            RootClient.warm(GL + "/bin/su_client");
+
+            String cmd = "mkdir -p /odm/bin 2>/dev/null; "
+                    + "grep -q ' /odm ' /proc/mounts || "
+                    + "mount -t tmpfs -o rw,exec,nosuid,nodev,mode=755,size=32m tmpfs /odm; "
+                    + "mkdir -p /odm/bin /odm/ghostlock; "
+                    + "chmod 755 /odm /odm/bin /odm/ghostlock; "
+                    + "cp -f " + GL + "/bin/su_client /odm/bin/su; "
+                    + "chmod 755 /odm/bin/su; "
+                    + "[ -f " + POLICY + " ] || printf 'mode permissive\\n' > " + POLICY + "; "
+                    + "if [ -e /system/bin/su ]; then mount --bind /odm/bin/su /system/bin/su "
+                    + "2>/dev/null && echo 'bound over /system/bin/su'; fi; "
+                    + "ls -l /odm/bin/su /system/bin/su 2>&1; "
+                    + "cat " + POLICY + " 2>/dev/null";
+
+            RootClient.Result r = RootClient.run(cmd, 90000);
+            ui.post(() -> {
+                appendLog(r.toString());
+                refreshStatus();
+            });
+        }, "install-su").start();
     }
 
     private void deployKit() {
@@ -248,22 +284,32 @@ public class MainActivity extends Activity {
                 ui.post(() -> appendLog("minisud is already running"));
                 return;
             }
-            ui.post(() -> appendLog("$ start minisud"));
-            RootClient.Result r = RootClient.run(
-                    "nohup " + GL + "/bin/minisud >/dev/null 2>&1 & "
-                            + "i=0; while [ $i -lt 20 ]; do [ -S " + RootClient.SOCK
-                            + " ] && break; sleep 0.5; i=$((i+1)); done; "
-                            + "cat /dev/minisud.pid 2>/dev/null", 30000);
+            ui.post(() -> appendLog("$ start minisud (defex launcher)"));
+            RootClient.warmKit();
+            RootClient.Result r = RootClient.run(RootClient.startDaemonCommand(), 40000);
             boolean alive = RootClient.daemonAlive();
             ui.post(() -> {
-                String out = r.out.trim();
-                if (!out.isEmpty()) {
-                    appendLog(out);
-                }
+                appendLog(r.toString());
                 appendLog(alive ? "minisud is up" : "minisud did not start (root not armed?)");
                 refreshStatus();
             });
         }, "start-daemon").start();
+    }
+
+    /** Kills the daemon by pid; direct exec of the payload is DEFEX-blocked. */
+    private void stopDaemon() {
+        appendLog("$ stop minisud");
+        new Thread(() -> {
+            RootClient.Result r = RootClient.run(
+                    "P=$(cat /dev/minisud.pid 2>/dev/null); "
+                            + "[ -n \"$P\" ] && kill \"$P\" 2>/dev/null; "
+                            + "rm -f /dev/minisud.pid /dev/minisud.sock; "
+                            + "echo \"stopped ${P:-nothing}\"", 20000);
+            ui.post(() -> {
+                appendLog(r.toString());
+                refreshStatus();
+            });
+        }, "stop-daemon").start();
     }
 
     // --------------------------------------------------------------- policy
@@ -360,24 +406,36 @@ public class MainActivity extends Activity {
     // ------------------------------------------------------------------- rw
 
     private void rwAction(String action) {
-        if ("add".equals(action)) {
-            String path = rwView.getText().toString().trim();
-            if (!path.startsWith("/")) {
-                toast("enter an absolute path");
-                return;
+        String path = rwView.getText().toString().trim();
+        boolean needsPath = "add".equals(action) || "remove".equals(action);
+        if (needsPath && !path.startsWith("/")) {
+            toast("enter an absolute path");
+            return;
+        }
+        appendLog("$ rw " + action + (needsPath ? " " + path : ""));
+        new Thread(() -> {
+            String out;
+            try {
+                switch (action) {
+                    case "add":
+                        out = RwLayer.add(this, path);
+                        break;
+                    case "remove":
+                        out = RwLayer.remove(this, path);
+                        break;
+                    case "save":
+                        out = RwLayer.save(this);
+                        break;
+                    default:
+                        out = RwLayer.list(this);
+                        break;
+                }
+            } catch (Throwable t) {
+                out = "rw " + action + " failed: " + t;
             }
-            runCmd("glm rw add " + path, GLM + " rw add '" + escape(path) + "'", 240000);
-            return;
-        }
-        if ("save".equals(action)) {
-            runCmd("glm rw save", GLM + " rw save", 240000);
-            return;
-        }
-        runCmd("glm rw list", GLM + " rw list", 30000);
-    }
-
-    private static String escape(String s) {
-        return s.replace("'", "'\\''");
+            final String text = out;
+            ui.post(() -> appendLog(text));
+        }, "rw-" + action).start();
     }
 
     // ----------------------------------------------------------------- boot

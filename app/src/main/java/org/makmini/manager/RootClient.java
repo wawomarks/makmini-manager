@@ -5,6 +5,8 @@ import android.net.LocalSocketAddress;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -14,17 +16,31 @@ import java.util.concurrent.TimeUnit;
 /**
  * Root command transport.
  *
- * <p>Primary path: the minisud daemon on {@code /dev/minisud.sock}. Requests use
- * the {@code MSD1 'T'} framing so stdout/stderr are captured and returned even
- * for app processes that have no controlling terminal.
+ * <p>Three paths, tried in order:
  *
- * <p>Fallback: a {@code su} binary (GhostLock installs {@code /odm/bin/su}).
- * This is what lets the manager start the daemon or deploy the kit before the
- * socket exists.
+ * <ol>
+ *   <li><b>minisud</b> on {@code /dev/minisud.sock}. Requests use the
+ *       {@code MSD1 'T'} framing so stdout/stderr are captured and returned
+ *       even for app processes that have no controlling terminal.</li>
+ *   <li><b>GhostLock channel</b> ({@code mpnl}). The helper polls
+ *       {@code /data/local/tmp/rcmd} and writes the result to
+ *       {@code /data/local/tmp/rout}; both files are world-writable, so the
+ *       app can drive it without any su binary or daemon. This is the path
+ *       that survives "minisud is dead" and boot-time attempts.</li>
+ *   <li><b>su binary</b> (GhostLock installs {@code /odm/bin/su}).</li>
+ * </ol>
+ *
+ * <p>{@link #warm(String...)} must be called before a root-side command reads a
+ * file on {@code /data}: kernel root has no fscrypt key, so cold inodes fail
+ * with ENOKEY. Reading the file from the app fills the page cache.
  */
 public final class RootClient {
 
     public static final String SOCK = "/dev/minisud.sock";
+
+    /** GhostLock root helper command/response files (mode 0666). */
+    public static final String CHAN_CMD = "/data/local/tmp/rcmd";
+    public static final String CHAN_OUT = "/data/local/tmp/rout";
 
     private static final String[] SU_BINS = {
             "/odm/bin/su",
@@ -34,7 +50,20 @@ public final class RootClient {
             "/su/bin/su",
     };
 
+    /** Files the root side needs before it can start the daemon. */
+    private static final String[] KIT_FILES = {
+            "/data/local/tmp/defex/defex",
+            "/data/local/tmp/defex/defex.sh",
+            "/data/local/tmp/.gl/bin/minisud",
+            "/data/local/tmp/.gl/bin/makmini_boot.sh",
+    };
+
     private static final int MAX_OUTPUT = 1024 * 1024;
+    private static final long CHAN_RETRY_MS = 15000;
+
+    private static final Object CHAN_LOCK = new Object();
+    private static int chanState;          // 0 unknown, 1 up, -1 down
+    private static long chanDownAt;
 
     private RootClient() {
     }
@@ -43,12 +72,13 @@ public final class RootClient {
     public static final class Result {
         public final int rc;
         public final String out;
-        public final boolean viaDaemon;
+        /** Transport that answered: "minisud", "mpnl" or "su". */
+        public final String via;
 
-        Result(int rc, String out, boolean viaDaemon) {
+        Result(int rc, String out, String via) {
             this.rc = rc;
             this.out = out == null ? "" : out;
-            this.viaDaemon = viaDaemon;
+            this.via = via;
         }
 
         public boolean ok() {
@@ -58,7 +88,7 @@ public final class RootClient {
         @Override
         public String toString() {
             String body = out.trim();
-            String suffix = "[rc=" + rc + (viaDaemon ? " via minisud" : " via su") + "]";
+            String suffix = "[rc=" + rc + " via " + via + "]";
             return body.isEmpty() ? suffix : body + "\n" + suffix;
         }
     }
@@ -88,16 +118,69 @@ public final class RootClient {
     }
 
     /**
-     * Runs {@code command} as uid 0. Tries the daemon first, then a su binary.
-     * Never throws: failures come back as a non-zero rc with a message.
+     * Runs {@code command} as uid 0. Never throws: failures come back as a
+     * non-zero rc with a message.
      */
     public static Result run(String command, int timeoutMs) {
         Result r = viaDaemon(command, timeoutMs);
         if (r != null) {
             return r;
         }
+        r = viaChannel(command, timeoutMs);
+        if (r != null) {
+            return r;
+        }
         return viaSu(command, timeoutMs);
     }
+
+    /**
+     * Reads files so their pages land in the page cache. Root can then exec or
+     * copy them even though it has no fscrypt key. Returns the file count read.
+     */
+    public static int warm(String... paths) {
+        byte[] buf = new byte[64 * 1024];
+        int files = 0;
+        for (String path : paths) {
+            if (path == null) {
+                continue;
+            }
+            File f = new File(path);
+            if (f.isDirectory()) {
+                files += warmTree(f, buf, 4000);
+                continue;
+            }
+            if (readFully(f, buf)) {
+                files++;
+            }
+        }
+        return files;
+    }
+
+    /** Warms the binaries needed to launch the daemon from root. */
+    public static int warmKit() {
+        return warm(KIT_FILES);
+    }
+
+    /** Forces the next call to re-probe the GhostLock channel. */
+    public static void resetChannel() {
+        synchronized (CHAN_LOCK) {
+            chanState = 0;
+            chanDownAt = 0;
+        }
+    }
+
+    /** Shell snippet that starts minisud through the DEFEX launcher. */
+    public static String startDaemonCommand() {
+        return "[ -S " + SOCK + " ] && { echo 'minisud already running'; exit 0; }; "
+                + "nohup sh /data/local/tmp/defex/defex.sh -g -d "
+                + "/data/local/tmp/.gl/bin/minisud >/dev/null 2>&1 & "
+                + "i=0; while [ $i -lt 40 ]; do [ -S " + SOCK + " ] && break; "
+                + "sleep 0.25; i=$((i+1)); done; "
+                + "cat /dev/minisud.pid 2>/dev/null; "
+                + "[ -S " + SOCK + " ] && echo 'minisud is up' || echo 'minisud did not start'";
+    }
+
+    // ------------------------------------------------------------- transports
 
     private static Result viaDaemon(String command, int timeoutMs) {
         LocalSocket socket = new LocalSocket();
@@ -126,7 +209,7 @@ public final class RootClient {
 
             String raw = readAll(socket.getInputStream());
             int rc = parseRc(raw);
-            return new Result(rc, stripMarker(raw), true);
+            return new Result(rc, stripMarker(raw), "minisud");
         } catch (IOException e) {
             return null;
         } finally {
@@ -134,13 +217,75 @@ public final class RootClient {
         }
     }
 
+    /**
+     * The GhostLock file channel. Serialised because the helper has a single
+     * command slot; the state cache keeps status refreshes fast when root is
+     * not armed.
+     */
+    private static Result viaChannel(String command, int timeoutMs) {
+        synchronized (CHAN_LOCK) {
+            long now = System.currentTimeMillis();
+            if (chanState < 0 && now - chanDownAt < CHAN_RETRY_MS) {
+                return null;
+            }
+            if (chanState == 0) {
+                if (!new File(CHAN_CMD).canWrite() || !new File(CHAN_OUT).canWrite()) {
+                    chanState = -1;
+                    chanDownAt = now;
+                    return null;
+                }
+                Result probe = channelSend("true", 3000);
+                if (probe == null || probe.rc == 124) {
+                    chanState = -1;
+                    chanDownAt = now;
+                    return null;
+                }
+                chanState = 1;
+            }
+            return channelSend(command, timeoutMs);
+        }
+    }
+
+    private static Result channelSend(String command, int timeoutMs) {
+        File cmd = new File(CHAN_CMD);
+        File out = new File(CHAN_OUT);
+        try {
+            try (FileOutputStream ignore = new FileOutputStream(out, false)) {
+                // Clear the previous result.
+            }
+            try (FileOutputStream fos = new FileOutputStream(cmd, false)) {
+                fos.write((command + "\n").getBytes(StandardCharsets.UTF_8));
+                fos.flush();
+            }
+        } catch (IOException e) {
+            return null;
+        }
+
+        long deadline = System.currentTimeMillis() + Math.max(1000, timeoutMs);
+        String raw = "";
+        while (System.currentTimeMillis() < deadline) {
+            if (out.length() > 0) {
+                sleep(200);      // let the helper finish appending the rc line
+                raw = readText(out);
+                break;
+            }
+            sleep(100);
+        }
+        if (raw.isEmpty()) {
+            return new Result(124, "[timeout waiting for the GhostLock channel]", "mpnl");
+        }
+        int rc = parseChanRc(raw);
+        return new Result(rc, stripChanRc(raw), "mpnl");
+    }
+
     private static Result viaSu(String command, int timeoutMs) {
         String su = suBinary();
         if (su == null) {
             return new Result(127,
-                    "no root transport: " + SOCK + " unreachable and no su binary found.\n"
+                    "no root transport: " + SOCK + " unreachable, GhostLock channel idle "
+                            + "and no su binary found.\n"
                             + "Arm root first (adb shell sh /data/local/tmp/glroot.sh true).",
-                    false);
+                    "su");
         }
 
         try {
@@ -159,11 +304,60 @@ public final class RootClient {
             }
             if (!done) {
                 p.destroyForcibly();
-                return new Result(124, out + "\n[timeout after " + timeoutMs + " ms]", false);
+                return new Result(124, out + "\n[timeout after " + timeoutMs + " ms]", "su");
             }
-            return new Result(p.exitValue(), out, false);
+            return new Result(p.exitValue(), out, "su");
         } catch (IOException e) {
-            return new Result(126, "failed to run " + su + ": " + e.getMessage(), false);
+            return new Result(126, "failed to run " + su + ": " + e.getMessage(), "su");
+        }
+    }
+
+    // ---------------------------------------------------------------- helpers
+
+    private static int warmTree(File dir, byte[] buf, int budget) {
+        File[] kids = dir.listFiles();
+        if (kids == null) {
+            return 0;
+        }
+        int files = 0;
+        for (File k : kids) {
+            if (files >= budget) {
+                break;
+            }
+            if (k.isDirectory()) {
+                files += warmTree(k, buf, budget - files);
+            } else if (readFully(k, buf)) {
+                files++;
+            }
+        }
+        return files;
+    }
+
+    private static boolean readFully(File f, byte[] buf) {
+        try (InputStream in = new FileInputStream(f)) {
+            while (in.read(buf) > 0) {
+                // Pages only: the data is intentionally discarded.
+            }
+            return true;
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    private static String readText(File f) {
+        try (InputStream in = new FileInputStream(f)) {
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) > 0) {
+                bos.write(buf, 0, n);
+                if (bos.size() > MAX_OUTPUT) {
+                    break;
+                }
+            }
+            return new String(bos.toByteArray(), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            return "";
         }
     }
 
@@ -204,6 +398,26 @@ public final class RootClient {
         }
     }
 
+    private static int parseChanRc(String raw) {
+        int idx = raw.lastIndexOf("[rc=");
+        if (idx < 0) {
+            return 0;
+        }
+        int end = idx + 4;
+        StringBuilder sb = new StringBuilder();
+        while (end < raw.length() && Character.isDigit(raw.charAt(end))) {
+            sb.append(raw.charAt(end++));
+        }
+        if (sb.length() == 0) {
+            return 0;
+        }
+        try {
+            return Integer.parseInt(sb.toString());
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
     private static String stripMarker(String raw) {
         int idx = raw.lastIndexOf("__RC__:");
         if (idx < 0) {
@@ -214,6 +428,23 @@ public final class RootClient {
             body = body.substring(0, body.length() - 1);
         }
         return body;
+    }
+
+    private static String stripChanRc(String raw) {
+        int idx = raw.lastIndexOf("[rc=");
+        String body = idx < 0 ? raw : raw.substring(0, idx);
+        while (body.endsWith("\n") || body.endsWith("\r")) {
+            body = body.substring(0, body.length() - 1);
+        }
+        return body;
+    }
+
+    private static void sleep(long ms) {
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private static void closeQuietly(LocalSocket socket) {
