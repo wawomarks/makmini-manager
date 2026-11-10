@@ -14,7 +14,21 @@ android {
         versionName "1.0"
     }
 
+    // Checked-in debug key so every CI build (and every local build) updates
+    // the previous install instead of failing with INSTALL_FAILED_UPDATE_INCOMPATIBLE.
+    signingConfigs {
+        debug {
+            storeFile file('makmini-debug.jks')
+            storePassword 'makmini'
+            keyAlias 'makmini'
+            keyPassword 'makmini'
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
