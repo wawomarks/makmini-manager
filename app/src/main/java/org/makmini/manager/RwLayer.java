@@ -35,6 +35,9 @@ public final class RwLayer {
     private static final String PREFS = "rw";
     private static final String KEY_PATHS = "paths";
 
+    /** Last I/O error from {@link #push}, for diagnostics. */
+    private static String pushError;
+
     private RwLayer() {
     }
 
@@ -67,6 +70,7 @@ public final class RwLayer {
             return "rw save: no layers";
         }
         StringBuilder out = new StringBuilder();
+        prepare();
         for (String path : paths) {
             String id = id(path);
             RootClient.Result r = RootClient.run(
@@ -169,12 +173,12 @@ public final class RwLayer {
         File mirror = new File(mirrorDir(ctx), id + ".tar");
         String stage = STAGE + "/" + id + ".tar";
 
-        if (mirror.isFile()) {
-            if (!push(mirror, new File(stage))) {
-                return path + ": cannot stage " + mirror;
-            }
-        } else {
-            RootClient.run("rm -f " + stage + "; echo ok", 10000);
+        // A previous save leaves a root-owned tar here; the app cannot truncate
+        // it, so remove it as root before staging a fresh copy.
+        RootClient.run("rm -f " + stage + "; echo ok", 15000);
+
+        if (mirror.isFile() && !push(mirror, new File(stage))) {
+            return path + ": cannot stage " + mirror + " (" + pushError + ")";
         }
 
         // Page-cache warm: kernel root has no fscrypt key for cold /data inodes.
@@ -241,8 +245,10 @@ public final class RwLayer {
             while ((n = in.read(buf)) > 0) {
                 out.write(buf, 0, n);
             }
+            pushError = null;
             return true;
         } catch (IOException e) {
+            pushError = e.toString();
             return false;
         }
     }
