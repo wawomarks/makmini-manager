@@ -1,0 +1,14 @@
+# Gradle / Android build output
+.gradle/
+build/
+app/build/
+*.apk
+*.aab
+
+# Local machine config (contains SDK path)
+local.properties
+
+# IDE
+.idea/
+*.iml
+.DS_Store
