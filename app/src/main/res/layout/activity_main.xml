@@ -84,6 +84,10 @@
                 style="@style/RowButton"
                 android:text="id" />
             <Button
+                android:id="@+id/btnExecTest"
+                style="@style/RowButton"
+                android:text="Exec test" />
+            <Button
                 android:id="@+id/btnClear"
                 style="@style/RowButton"
                 android:text="Clear log" />

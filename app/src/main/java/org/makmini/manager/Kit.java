@@ -28,6 +28,7 @@ public final class Kit {
             {"payload.sh", "/data/local/tmp/defex/payload.sh", "755"},
             {"minisud", "/data/local/tmp/.gl/bin/minisud", "755"},
             {"su_client", "/data/local/tmp/.gl/bin/su_client", "755"},
+            {"rx.sh", "/data/local/tmp/.gl/bin/rx", "755"},
             {"glroot_all.sh", "/data/local/tmp/.gl/bin/glroot_all.sh", "755"},
             {"init_hook_boot.sh", "/data/local/tmp/.gl/bin/init_hook_boot.sh", "755"},
             {"makmini_boot.sh", "/data/local/tmp/.gl/bin/makmini_boot.sh", "755"},

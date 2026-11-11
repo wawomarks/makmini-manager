@@ -34,6 +34,7 @@ public class MainActivity extends Activity {
     private static final String GL = "/data/local/tmp/.gl";
     private static final String POLICY = "/dev/minisud.policy";
     private static final String ARM_CMD = "sh /data/local/tmp/glroot.sh true";
+    private static final String EXEC_SHIM_LABEL = "/system/bin/fsdbg (safeplace)";
 
     private static final String STATUS_CMD =
             "echo uid=$(id -u); "
@@ -43,7 +44,9 @@ public class MainActivity extends Activity {
                     + "echo helper=$(cat /proc/sys/kernel/modprobe 2>/dev/null); "
                     + "echo pid=$(cat /dev/minisud.pid 2>/dev/null); "
                     + "echo mode=$(head -n 1 " + POLICY + " 2>/dev/null); "
-                    + "echo shim=$(ls -l /odm/bin/su 2>/dev/null | tr -s ' ')";
+                    + "echo shim=$(ls -l /odm/bin/su 2>/dev/null | tr -s ' '); "
+                    + "echo execsafe=$(grep -qF ' /system/bin/fsdbg ' /proc/self/mountinfo "
+                    + "2>/dev/null && echo yes || echo no)";
 
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final StringBuilder console = new StringBuilder();
@@ -82,6 +85,7 @@ public class MainActivity extends Activity {
 
         findViewById(R.id.btnRun).setOnClickListener(v -> runInputCommand());
         findViewById(R.id.btnWhoami).setOnClickListener(v -> runCmd("id", "id", 20000));
+        findViewById(R.id.btnExecTest).setOnClickListener(v -> runExecTest());
         findViewById(R.id.btnClear).setOnClickListener(v -> clearConsole());
 
         findViewById(R.id.btnMode).setOnClickListener(v -> toggleMode());
@@ -189,6 +193,10 @@ public class MainActivity extends Activity {
                 .append('\n');
 
         sb.append("su shim   : ").append(su == null ? "missing" : su).append('\n');
+        String execsafe = field(r.out, "execsafe=");
+        sb.append("exec shim : ")
+                .append("yes".equals(execsafe) ? EXEC_SHIM_LABEL : "not bound (use sh rx)")
+                .append('\n');
         sb.append("transport : ").append(r.via).append(" (rc ").append(r.rc).append(")\n");
         sb.append("rw layers : ").append(RwLayer.paths(this).size()).append(" saved\n");
 
@@ -240,11 +248,30 @@ public class MainActivity extends Activity {
         runCmd(command, command, 120000);
     }
 
+    /**
+     * Proves the DEFEX safeplace path: a direct exec of the bundled busybox
+     * from a root shell is killed, but the same binary through rx works.
+     */
+    private void runExecTest() {
+        appendLog("$ exec smoke test (DEFEX safeplace)");
+        new Thread(() -> {
+            String bin = GL + "/busybox";
+            RootClient.Result direct = RootClient.run("dd if=" + bin
+                    + " of=/dev/null bs=65536 2>/dev/null; " + bin + " id", 20000);
+            RootClient.Result viaRx = RootClient.runExec(bin, 25000, "id");
+            ui.post(() -> {
+                appendLog("direct exec:\n" + direct);
+                appendLog("via rx safeplace:\n" + viaRx);
+            });
+        }, "exec-test").start();
+    }
+
     private void installSu() {
         appendLog("$ install su shim");
         new Thread(() -> {
             // Root cannot read a cold /data inode (fscrypt ENOKEY): warm first.
             RootClient.warm(GL + "/bin/su_client");
+            RootClient.warm(GL + "/bin/rx");
 
             String cmd = "mkdir -p /odm/bin 2>/dev/null; "
                     + "grep -q ' /odm ' /proc/mounts || "
@@ -253,10 +280,12 @@ public class MainActivity extends Activity {
                     + "chmod 755 /odm /odm/bin /odm/ghostlock; "
                     + "cp -f " + GL + "/bin/su_client /odm/bin/su; "
                     + "chmod 755 /odm/bin/su; "
+                    + "cp -f " + GL + "/bin/rx /odm/bin/rx; "
+                    + "chmod 755 /odm/bin/rx; "
                     + "[ -f " + POLICY + " ] || printf 'mode permissive\\n' > " + POLICY + "; "
-                    + "if [ -e /system/bin/su ]; then mount --bind /odm/bin/su /system/bin/su "
-                    + "2>/dev/null && echo 'bound over /system/bin/su'; fi; "
-                    + "ls -l /odm/bin/su /system/bin/su 2>&1; "
+                    + "ls -l /odm/bin/su /odm/bin/rx 2>&1; "
+                    + "echo 'su shim is /odm/bin/su (on PATH; /system/bin/su is absent)'; "
+                    + "echo 'unsigned binaries: su -x <path> [args]  (or sh /odm/bin/rx <path>)'; "
                     + "cat " + POLICY + " 2>/dev/null";
 
             RootClient.Result r = RootClient.run(cmd, 90000);

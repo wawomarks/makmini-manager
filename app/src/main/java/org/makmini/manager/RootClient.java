@@ -45,6 +45,12 @@ public final class RootClient {
     public static final String CHAN_CMD = "/data/local/tmp/rcmd";
     public static final String CHAN_OUT = "/data/local/tmp/rout";
 
+    /** DEFEX exec shim: runs an unsigned payload through a safeplace. */
+    public static final String RX = "/data/local/tmp/.gl/bin/rx";
+
+    /** Canonical safeplace minisud is bound to after start (root exec shim). */
+    public static final String EXEC_SHIM = "/system/bin/fsdbg";
+
     private static final String[] SU_BINS = {
             "/odm/bin/su",
             "/system/bin/su",
@@ -58,7 +64,10 @@ public final class RootClient {
             "/data/local/tmp/defex/defex",
             "/data/local/tmp/defex/defex.sh",
             "/data/local/tmp/.gl/bin/minisud",
+            "/data/local/tmp/.gl/bin/su_client",
+            "/data/local/tmp/.gl/bin/rx",
             "/data/local/tmp/.gl/bin/makmini_boot.sh",
+            "/data/local/tmp/.gl/busybox",
     };
 
     private static final int MAX_OUTPUT = 1024 * 1024;
@@ -182,14 +191,46 @@ public final class RootClient {
      */
     public static String startDaemonCommand() {
         return "[ -S " + SOCK + " ] && { echo 'minisud already running'; exit 0; }; "
-                + "B=" + DAEMON + "; S=/system/bin/fsdbg; "
+                + "B=" + DAEMON + "; S=" + EXEC_SHIM + "; "
                 + "[ -x \"$B\" ] || { echo \"missing $B\"; exit 127; }; "
+                // A stale bind from an earlier boot would hide the real fsdbg.
+                + "grep -qF \" $S \" /proc/self/mountinfo 2>/dev/null && umount -l \"$S\" 2>/dev/null; "
                 + "mount --bind \"$B\" \"$S\" || { echo 'bind failed'; exit 4; }; "
                 + "nohup \"$S\" </dev/null >/dev/null 2>&1 & "
                 + "i=0; while [ $i -lt 40 ]; do [ -S " + SOCK + " ] && break; "
                 + "sleep 0.25; i=$((i+1)); done; "
                 + "echo \"pid=$(cat /dev/minisud.pid 2>/dev/null)\"; "
-                + "[ -S " + SOCK + " ] && echo 'minisud is up' || echo 'minisud did not start'";
+                + "[ -S " + SOCK + " ] && echo 'minisud is up' || echo 'minisud did not start'; "
+                + "echo \"exec shim: $S --exec <binary> [args...]\"; "
+                + "echo \"or: sh " + RX + " <binary> [args...]\"";
+    }
+
+    /** Shell-quotes one argument for the daemon's /system/bin/sh. */
+    public static String quote(String s) {
+        return "'" + (s == null ? "" : s.replace("'", "'\\''")) + "'";
+    }
+
+    /**
+     * Command string that runs an unsigned binary through the rx shim.
+     * Callers must warm the payload first; {@link #runExec} does that.
+     */
+    public static String execCommand(String binary, String... args) {
+        StringBuilder cmd = new StringBuilder("sh ").append(quote(RX))
+                .append(' ').append(quote(binary));
+        for (String arg : args) {
+            cmd.append(' ').append(quote(arg));
+        }
+        return cmd.toString();
+    }
+
+    /**
+     * Runs an unsigned /data or /odm binary as root through a DEFEX safeplace.
+     * The payload is warmed so kernel root can read it (fscrypt ENOKEY).
+     */
+    public static Result runExec(String binary, int timeoutMs, String... args) {
+        warm(binary);
+        warm("/data/local/tmp/.gl/bin/su_client");
+        return run(execCommand(binary, args), timeoutMs);
     }
 
     // ------------------------------------------------------------- transports
